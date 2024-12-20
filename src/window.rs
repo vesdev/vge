@@ -1,28 +1,52 @@
-use crate::Result;
+use crate::{Error, Result};
 use tracing::info;
+use wgpu::SurfaceTarget;
 use winit::{application::ApplicationHandler, event::WindowEvent, event_loop::ControlFlow};
 
-#[derive(Default)]
-pub enum Window {
-    #[default]
-    Winit,
+pub(crate) struct Window {
+    pub(crate) backend: WindowBackend,
+    pub size: (u32, u32),
 }
 
-pub(crate) trait WindowBackend {
-    fn create_window(&mut self) -> Result;
+impl Window {
+    pub fn new(size: (u32, u32)) -> Result<Window, Error> {
+        let winit = WinitBackend::new(size)?;
+        let window = Window {
+            backend: WindowBackend::Winit(winit),
+            size,
+        };
+        Ok(window)
+    }
 }
 
-#[derive(Default)]
+impl<'window> Into<SurfaceTarget<'window>> for WindowBackend {
+    fn into(self) -> SurfaceTarget<'window> {
+        match self {
+            WindowBackend::Winit(winit_backend) => winit_backend.window.unwrap().into(),
+        }
+    }
+}
+
+pub(crate) enum WindowBackend {
+    Winit(WinitBackend),
+}
+
 pub(crate) struct WinitBackend {
     window: Option<winit::window::Window>,
+    event_loop: winit::event_loop::EventLoop<()>,
+    size: (u32, u32),
 }
 
-impl WindowBackend for WinitBackend {
-    fn create_window(&mut self) -> Result {
+impl WinitBackend {
+    fn new(size: (u32, u32)) -> Result<Self> {
         let event_loop = winit::event_loop::EventLoop::new()?;
         event_loop.set_control_flow(ControlFlow::Poll);
-        event_loop.run_app(self)?;
-        Ok(())
+        // event_loop.run_app(self)?;
+        Ok(Self {
+            window: None,
+            event_loop,
+            size,
+        })
     }
 }
 
@@ -52,13 +76,4 @@ impl ApplicationHandler for WinitBackend {
             _ => (),
         }
     }
-}
-
-pub fn open(window: Window) -> Result {
-    let mut be = match window {
-        Window::Winit => WinitBackend::default(),
-    };
-
-    be.create_window()?;
-    Ok(())
 }

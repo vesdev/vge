@@ -7,26 +7,31 @@ fn main() -> Result<(), vge::Error> {
         renderer: Renderer::Wgpu,
     };
 
-    vge::run(options, Simple::default())
+    smol::block_on(vge::run(options, Simple::default()))
 }
 
 #[derive(Default)]
 struct Simple {}
 
 impl App for Simple {
-    fn create() {
+    fn create(&mut self, gfx: &mut Gfx) {
+        // self.surf = Some(gfx.surface_create());
         todo!()
     }
 
-    fn step() {
+    fn step(&mut self) {
         todo!()
     }
 
-    fn draw(gfx: Gfx) {
+    fn draw(&mut self, gfx: &mut Gfx) {
+        // gfx.surface_set_target(self.surf.as_mut().unwrap(), |gfx| {
+        //     //TODO: draw something
+        // });
+
         todo!()
     }
 
-    fn event(event: Event) {
+    fn event(&mut self, event: Event) {
         todo!()
     }
 }

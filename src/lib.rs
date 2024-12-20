@@ -1,6 +1,8 @@
 use app::App;
 use options::Options;
+use prelude::{Gfx, GraphicsError};
 use thiserror::Error;
+use window::Window;
 use winit::error::EventLoopError;
 
 mod app;
@@ -12,15 +14,29 @@ pub mod prelude {
     pub use crate::app::*;
     pub use crate::options::*;
     pub use crate::renderer::*;
-    pub use crate::window::*;
 }
 
-pub fn run(opt: Options, app: impl App) -> Result {
-    window::open(opt.window)
+pub async fn run(opt: Options, mut app: impl App) -> Result {
+    let size = (640, 480);
+    let window = Window::new(size)?;
+    let mut gfx = Gfx::new(window).await;
+
+    app::draw(&mut app, &mut gfx);
+    Ok(())
 }
 
 pub mod options {
-    use crate::{renderer::Renderer, window::Window};
+    #[derive(Default)]
+    pub enum Window {
+        #[default]
+        Winit,
+    }
+
+    #[derive(Default)]
+    pub enum Renderer {
+        #[default]
+        Wgpu,
+    }
 
     #[derive(Default)]
     pub struct Options {
@@ -33,6 +49,8 @@ pub mod options {
 pub enum Error {
     #[error(transparent)]
     Window(#[from] EventLoopError),
+    #[error(transparent)]
+    Graphics(#[from] GraphicsError),
 }
 
 pub type Result<T = (), E = Error> = std::result::Result<T, E>;

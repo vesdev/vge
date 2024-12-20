@@ -50,7 +50,7 @@
           LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath buildInputs;
 
           devPackages = [
-            fenix.packages.${system}.complete.toolchain
+            fenix.packages.${system}.latest.toolchain
           ];
         in
         {
