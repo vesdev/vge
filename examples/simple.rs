@@ -1,37 +1,35 @@
 use vge::prelude::*;
 
-fn main() -> Result<(), vge::Error> {
+#[rustfmt::skip]
+fn main() -> vge::Result {
     tracing_subscriber::fmt::init();
-    let options = Options {
-        window: Window::Winit,
-        renderer: Renderer::Wgpu,
-    };
 
-    smol::block_on(vge::run(options, Simple::default()))
+    App::default()
+        .create(create)
+        .step(step)
+        .draw(draw)
+        .run()
 }
 
-#[derive(Default)]
-struct Simple {}
+pub struct State {
+    text: Text,
+}
 
-impl App for Simple {
-    fn create(&mut self, gfx: &mut Gfx) {
-        // self.surf = Some(gfx.surface_create());
-        todo!()
-    }
+/// Create event
+fn create(ctx: &mut Ctx) -> State {
+    //TODO: create some meshes here
+    let text = ctx.create_text("forsen");
 
-    fn step(&mut self) {
-        todo!()
-    }
+    State { text }
+}
 
-    fn draw(&mut self, gfx: &mut Gfx) {
-        // gfx.surface_set_target(self.surf.as_mut().unwrap(), |gfx| {
-        //     //TODO: draw something
-        // });
+/// Step event
+fn step(ctx: &mut Ctx, state: State) {
+    //TODO: some simple game logic
+}
 
-        todo!()
-    }
-
-    fn event(&mut self, event: Event) {
-        todo!()
-    }
+/// Draw event
+fn draw(ctx: &mut Ctx, state: State) {
+    //TODO: draw something simple
+    ctx.draw(state.text);
 }

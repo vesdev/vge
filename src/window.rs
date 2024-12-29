@@ -1,62 +1,82 @@
-use crate::{Error, Result};
+use std::sync::Arc;
+
+use crate::{
+    Error, Result,
+    app::{App, DrawFn},
+    prelude::Gfx,
+    renderer,
+};
 use tracing::info;
-use wgpu::SurfaceTarget;
 use winit::{application::ApplicationHandler, event::WindowEvent, event_loop::ControlFlow};
 
-pub(crate) struct Window {
-    pub(crate) backend: WindowBackend,
-    pub size: (u32, u32),
+pub(crate) trait Window {
+    fn size(&self) -> (u32, u32);
 }
 
-impl Window {
-    pub fn new(size: (u32, u32)) -> Result<Window, Error> {
-        let winit = WinitBackend::new(size)?;
-        let window = Window {
-            backend: WindowBackend::Winit(winit),
-            size,
-        };
-        Ok(window)
-    }
+pub fn winit<'a, S>(size: (u32, u32), draw: DrawFn<S>) -> Result<WindowBackend<'a, S>, Error> {
+    let winit = WinitWindow::new(size, draw)?;
+    Ok(WindowBackend::Winit(winit))
 }
 
-impl<'window> Into<SurfaceTarget<'window>> for WindowBackend {
-    fn into(self) -> SurfaceTarget<'window> {
+// impl WindowBackend {
+//     pub(crate) fn surface(&self) -> wgpu::Surface<'_> {
+//         self.surface()
+//     }
+// }
+
+pub(crate) enum WindowBackend<'a, S> {
+    Winit(WinitWindow<'a, S>),
+}
+
+impl<S> WindowBackend<'_, S> {
+    pub(crate) fn run(&mut self) -> Result {
         match self {
-            WindowBackend::Winit(winit_backend) => winit_backend.window.unwrap().into(),
+            WindowBackend::Winit(winit) => winit.run(),
         }
     }
 }
 
-pub(crate) enum WindowBackend {
-    Winit(WinitBackend),
+pub(crate) struct WinitWindow<'a, S> {
+    pub size: (u32, u32),
+    pub draw: DrawFn<S>,
+    pub gfx: Option<Gfx<'a>>,
+    pub window: Option<Arc<winit::window::Window>>,
 }
 
-pub(crate) struct WinitBackend {
-    window: Option<winit::window::Window>,
-    event_loop: winit::event_loop::EventLoop<()>,
-    size: (u32, u32),
-}
-
-impl WinitBackend {
-    fn new(size: (u32, u32)) -> Result<Self> {
-        let event_loop = winit::event_loop::EventLoop::new()?;
-        event_loop.set_control_flow(ControlFlow::Poll);
-        // event_loop.run_app(self)?;
-        Ok(Self {
-            window: None,
-            event_loop,
-            size,
-        })
+impl<S> Window for WinitWindow<'_, S> {
+    fn size(&self) -> (u32, u32) {
+        self.size
     }
 }
 
-impl ApplicationHandler for WinitBackend {
+impl<S> WinitWindow<'_, S> {
+    fn new(size: (u32, u32), draw: DrawFn<S>) -> Result<Self> {
+        Ok(Self {
+            window: None,
+            size,
+            draw,
+            gfx: None,
+        })
+    }
+
+    pub(crate) fn run(&mut self) -> Result {
+        let event_loop = winit::event_loop::EventLoop::new()?;
+        event_loop.set_control_flow(ControlFlow::Poll);
+        event_loop.run_app(self)?;
+        Ok(())
+    }
+}
+
+impl<S> ApplicationHandler for WinitWindow<'_, S> {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         let window_attributes = winit::window::Window::default_attributes()
             .with_title("forsen")
             .with_visible(true);
 
-        self.window = Some(event_loop.create_window(window_attributes).unwrap());
+        let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
+        self.gfx = Some(renderer::wgpu(window.clone(), self.size).unwrap());
+        self.window = Some(window);
+        // self.gfx.set_surface();
     }
 
     fn window_event(
@@ -72,6 +92,10 @@ impl ApplicationHandler for WinitBackend {
             }
             WindowEvent::RedrawRequested => {
                 self.window.as_ref().unwrap().request_redraw();
+                if let Some(gfx) = &mut self.gfx {
+                    gfx.render().unwrap();
+                    // (self.draw)(gfx)
+                }
             }
             _ => (),
         }

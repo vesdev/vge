@@ -1,21 +1,65 @@
-use event::Event;
-
-use crate::prelude::Gfx;
+use crate::prelude::{Gfx, Options};
+use crate::{Result, window};
 
 pub mod event;
 
-pub trait App {
-    fn create(&mut self, gfx: &mut Gfx);
-    fn step(&mut self);
-    fn draw(&mut self, gfx: &mut Gfx);
-    fn event(&mut self, event: Event);
+pub type CreateFn<S> = fn(&mut Ctx) -> S;
+pub type StepFn<S> = fn(&mut Ctx, S);
+pub type DrawFn<S> = fn(&mut Ctx, S);
+
+pub struct Ctx<'a> {
+    gfx: Gfx<'a>,
 }
 
-#[allow(unreachable_code, unused_variables)]
-pub(crate) fn draw(app: &mut impl App, gfx: &mut Gfx) {
-    let target = todo!();
+impl Ctx<'_> {
+    pub fn create_text(&self, text: &str) -> Text {
+        Text { text: text.into() }
+    }
 
-    gfx.set_target(target, |gfx| {
-        app.draw(gfx);
-    });
+    pub fn draw<T>(&mut self, mesh: T) {}
+}
+
+// TODO: remove this is temporary
+pub struct Text {
+    text: String,
+}
+
+// #[derive(Default)]
+pub struct App<S> {
+    create_fn: Option<CreateFn<S>>,
+    step_fn: Option<StepFn<S>>,
+    draw_fn: Option<DrawFn<S>>,
+}
+
+impl<T> Default for App<T> {
+    fn default() -> Self {
+        // todo!()
+        Self {
+            create_fn: None,
+            step_fn: None,
+            draw_fn: None,
+        }
+    }
+}
+
+impl<T> App<T> {
+    pub fn create(mut self, cb: CreateFn<T>) -> Self {
+        self.create_fn = Some(cb);
+        self
+    }
+
+    pub fn draw(mut self, cb: DrawFn<T>) -> Self {
+        self.draw_fn = Some(cb);
+        self
+    }
+
+    pub fn step(mut self, cb: StepFn<T>) -> Self {
+        self.step_fn = Some(cb);
+        self
+    }
+
+    pub fn run(&mut self) -> Result {
+        let mut window = window::winit((640, 480), self.draw_fn.take().unwrap())?;
+        window.run()
+    }
 }
