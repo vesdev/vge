@@ -8,10 +8,14 @@ pub type StepFn<S> = fn(&mut Ctx, S);
 pub type DrawFn<S> = fn(&mut Ctx, S);
 
 pub struct Ctx<'a> {
-    gfx: Gfx<'a>,
+    gfx: &'a Gfx<'a>,
 }
 
-impl Ctx<'_> {
+impl<'a> Ctx<'a> {
+    pub(crate) fn new(gfx: &'a Gfx<'a>) -> Self {
+        Self { gfx }
+    }
+
     pub fn create_text(&self, text: &str) -> Text {
         Text { text: text.into() }
     }

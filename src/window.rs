@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::{
     Error, Result,
-    app::{App, DrawFn},
+    app::{App, Ctx, DrawFn},
     prelude::Gfx,
     renderer,
 };
@@ -17,12 +17,6 @@ pub fn winit<'a, S>(size: (u32, u32), draw: DrawFn<S>) -> Result<WindowBackend<'
     let winit = WinitWindow::new(size, draw)?;
     Ok(WindowBackend::Winit(winit))
 }
-
-// impl WindowBackend {
-//     pub(crate) fn surface(&self) -> wgpu::Surface<'_> {
-//         self.surface()
-//     }
-// }
 
 pub(crate) enum WindowBackend<'a, S> {
     Winit(WinitWindow<'a, S>),
@@ -74,9 +68,12 @@ impl<S> ApplicationHandler for WinitWindow<'_, S> {
             .with_visible(true);
 
         let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
-        self.gfx = Some(renderer::wgpu(window.clone(), self.size).unwrap());
+        let mut gfx = renderer::wgpu(window.clone(), self.size).unwrap();
+        if let Gfx::Wgpu(wgpu) = &mut gfx {
+            wgpu.set_surface_size(window.inner_size().width, window.inner_size().height);
+        };
+        self.gfx = Some(gfx);
         self.window = Some(window);
-        // self.gfx.set_surface();
     }
 
     fn window_event(
@@ -92,10 +89,23 @@ impl<S> ApplicationHandler for WinitWindow<'_, S> {
             }
             WindowEvent::RedrawRequested => {
                 self.window.as_ref().unwrap().request_redraw();
+
                 if let Some(gfx) = &mut self.gfx {
+                    let ctx = Ctx::new(gfx);
+                    // (self.draw)(ctx);
+
                     gfx.render().unwrap();
-                    // (self.draw)(gfx)
                 }
+            }
+            WindowEvent::Resized(size) => {
+                let Some(gfx) = &mut self.gfx else {
+                    return;
+                };
+                let Gfx::Wgpu(wgpu) = gfx else {
+                    return;
+                };
+
+                wgpu.set_surface_size(size.width, size.height);
             }
             _ => (),
         }
