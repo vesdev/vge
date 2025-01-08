@@ -1,5 +1,9 @@
+use primitives::{Color, Position, Triangle, Vertex};
 use thiserror::Error;
-use wgpu::{include_wgsl, CreateSurfaceError, SurfaceTarget};
+use wgpu::{
+    CreateSurfaceError, SurfaceTarget, include_wgsl,
+    util::{DeviceExt, RenderEncoder},
+};
 
 /// Graphical Context
 pub enum Gfx<'a> {
@@ -33,6 +37,7 @@ pub struct WgpuContext<'a> {
     surface_configured: bool,
     config: wgpu::SurfaceConfiguration,
     pipeline: wgpu::RenderPipeline,
+    vbuf: wgpu::Buffer,
 }
 
 impl<'a> WgpuContext<'a> {
@@ -62,9 +67,55 @@ impl<'a> WgpuContext<'a> {
             view_formats: vec![],
         };
 
+        //TODO: use assets path relative to root
         let shader =
             device.create_shader_module(include_wgsl!("./../../../assets/shaders/default.wgsl"));
         let pipeline = Self::create_pipeline(&device, &config, &shader);
+
+        let trig = Triangle(
+            Vertex {
+                position: Position {
+                    x: 0.0,
+                    y: 0.5,
+                    z: 0.0,
+                },
+                color: Color {
+                    r: 0.0,
+                    g: 0.0,
+                    b: 1.0,
+                },
+            },
+            Vertex {
+                position: Position {
+                    x: -0.5,
+                    y: -0.5,
+                    z: 0.0,
+                },
+                color: Color {
+                    r: 1.0,
+                    g: 0.0,
+                    b: 0.0,
+                },
+            },
+            Vertex {
+                position: Position {
+                    x: 0.5,
+                    y: -0.5,
+                    z: 0.0,
+                },
+                color: Color {
+                    r: 0.0,
+                    g: 1.0,
+                    b: 0.0,
+                },
+            },
+        );
+
+        let vbuf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex bufer"),
+            contents: bytemuck::bytes_of(&trig),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
 
         Ok(Self {
             instance,
@@ -75,6 +126,7 @@ impl<'a> WgpuContext<'a> {
             config,
             surface_configured: false,
             pipeline,
+            vbuf,
         })
     }
 
@@ -140,7 +192,7 @@ impl<'a> WgpuContext<'a> {
                 module: shader,
                 entry_point: Some("vs_main"),
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
-                buffers: &[],
+                buffers: &[Vertex::desc()],
             },
             fragment: Some(wgpu::FragmentState {
                 module: shader,
@@ -221,6 +273,7 @@ impl<'a> WgpuContext<'a> {
             });
 
             render_pass.set_pipeline(&self.pipeline);
+            render_pass.set_vertex_buffer(0, self.vbuf.slice(..));
             render_pass.draw(0..3, 0..1);
         }
 
@@ -244,4 +297,49 @@ pub enum RenderError {
     Device(#[from] wgpu::RequestDeviceError),
     #[error("could fetch window surface")]
     Surface(#[from] wgpu::SurfaceError),
+}
+
+pub mod primitives {
+    use bytemuck::{Pod, Zeroable};
+    use wgpu::VertexAttribute;
+
+    #[repr(C)]
+    #[derive(Clone, Copy, Debug, Zeroable, Pod)]
+    pub struct Position {
+        pub x: f32,
+        pub y: f32,
+        pub z: f32,
+    }
+
+    #[repr(C)]
+    #[derive(Clone, Copy, Debug, Zeroable, Pod)]
+    pub struct Color {
+        pub r: f32,
+        pub b: f32,
+        pub g: f32,
+    }
+
+    #[repr(C)]
+    #[derive(Clone, Copy, Debug, Zeroable, Pod)]
+    pub struct Vertex {
+        pub position: Position,
+        pub color: Color,
+    }
+
+    impl Vertex {
+        pub fn desc() -> wgpu::VertexBufferLayout<'static> {
+            const ATTRIBUTES: &[VertexAttribute] =
+                &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
+
+            wgpu::VertexBufferLayout {
+                array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
+                step_mode: wgpu::VertexStepMode::Vertex,
+                attributes: ATTRIBUTES,
+            }
+        }
+    }
+
+    #[repr(C)]
+    #[derive(Clone, Copy, Debug, Zeroable, Pod)]
+    pub struct Triangle(pub Vertex, pub Vertex, pub Vertex);
 }
