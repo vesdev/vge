@@ -1,7 +1,6 @@
 use vge::prelude::*;
 
-#[rustfmt::skip]
-fn main() -> vge::Result {
+fn main() {
     tracing_subscriber::fmt::init();
 
     App::default()
@@ -9,10 +8,11 @@ fn main() -> vge::Result {
         .step(step)
         .draw(draw)
         .run()
+        .unwrap();
 }
 
 pub struct State {
-    text: Text,
+    text: mesh::Text,
 }
 
 /// Create event

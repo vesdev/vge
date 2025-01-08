@@ -1,36 +1,39 @@
 use std::sync::Arc;
 
-use crate::{
-    Error, Result,
-    app::{App, Ctx, DrawFn},
-    prelude::Gfx,
-    renderer,
-};
+use thiserror::Error;
 use tracing::info;
-use winit::{application::ApplicationHandler, event::WindowEvent, event_loop::ControlFlow};
+use vge_core::{Ctx, DrawFn};
+use vge_render::Gfx;
+use winit::{
+    application::ApplicationHandler, error::EventLoopError, event::WindowEvent,
+    event_loop::ControlFlow,
+};
 
-pub(crate) trait Window {
+pub trait Window {
     fn size(&self) -> (u32, u32);
 }
 
-pub fn winit<'a, S>(size: (u32, u32), draw: DrawFn<S>) -> Result<WindowBackend<'a, S>, Error> {
+pub fn winit<'a, S>(
+    size: (u32, u32),
+    draw: DrawFn<S>,
+) -> Result<WindowBackend<'a, S>, WindowError> {
     let winit = WinitWindow::new(size, draw)?;
     Ok(WindowBackend::Winit(winit))
 }
 
-pub(crate) enum WindowBackend<'a, S> {
+pub enum WindowBackend<'a, S> {
     Winit(WinitWindow<'a, S>),
 }
 
 impl<S> WindowBackend<'_, S> {
-    pub(crate) fn run(&mut self) -> Result {
+    pub fn run(&mut self) -> Result<(), WindowError> {
         match self {
             WindowBackend::Winit(winit) => winit.run(),
         }
     }
 }
 
-pub(crate) struct WinitWindow<'a, S> {
+pub struct WinitWindow<'a, S> {
     pub size: (u32, u32),
     pub draw: DrawFn<S>,
     pub gfx: Option<Gfx<'a>>,
@@ -44,7 +47,7 @@ impl<S> Window for WinitWindow<'_, S> {
 }
 
 impl<S> WinitWindow<'_, S> {
-    fn new(size: (u32, u32), draw: DrawFn<S>) -> Result<Self> {
+    fn new(size: (u32, u32), draw: DrawFn<S>) -> Result<Self, WindowError> {
         Ok(Self {
             window: None,
             size,
@@ -53,7 +56,7 @@ impl<S> WinitWindow<'_, S> {
         })
     }
 
-    pub(crate) fn run(&mut self) -> Result {
+    pub(crate) fn run(&mut self) -> Result<(), WindowError> {
         let event_loop = winit::event_loop::EventLoop::new()?;
         event_loop.set_control_flow(ControlFlow::Poll);
         event_loop.run_app(self)?;
@@ -68,7 +71,7 @@ impl<S> ApplicationHandler for WinitWindow<'_, S> {
             .with_visible(true);
 
         let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
-        let mut gfx = renderer::wgpu(window.clone(), self.size).unwrap();
+        let mut gfx = vge_render::wgpu(window.clone(), self.size).unwrap();
         if let Gfx::Wgpu(wgpu) = &mut gfx {
             wgpu.set_surface_size(window.inner_size().width, window.inner_size().height);
         };
@@ -110,4 +113,10 @@ impl<S> ApplicationHandler for WinitWindow<'_, S> {
             _ => (),
         }
     }
+}
+
+#[derive(Error, Debug)]
+pub enum WindowError {
+    #[error(transparent)]
+    EventLoop(#[from] EventLoopError),
 }

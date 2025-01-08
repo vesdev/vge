@@ -1,14 +1,14 @@
-use crate::Result;
 use thiserror::Error;
-use wgpu::{CreateSurfaceError, SurfaceTarget, util::RenderEncoder};
+use wgpu::{include_wgsl, CreateSurfaceError, SurfaceTarget};
 
+/// Graphical Context
 pub enum Gfx<'a> {
     Wgpu(WgpuContext<'a>),
     None,
 }
 
 impl Gfx<'_> {
-    pub(crate) fn render(&mut self) -> Result {
+    pub fn render(&mut self) -> Result<(), RenderError> {
         match self {
             Gfx::Wgpu(wgpu_context) => wgpu_context.render(),
             Gfx::None => todo!(),
@@ -16,12 +16,15 @@ impl Gfx<'_> {
     }
 }
 
-pub(crate) fn wgpu<'a>(target: impl Into<SurfaceTarget<'a>>, size: (u32, u32)) -> Result<Gfx<'a>> {
+pub fn wgpu<'a>(
+    target: impl Into<SurfaceTarget<'a>>,
+    size: (u32, u32),
+) -> Result<Gfx<'a>, RenderError> {
     let ctx = WgpuContext::new(target, size)?;
     Ok(Gfx::Wgpu(ctx))
 }
 
-pub(crate) struct WgpuContext<'a> {
+pub struct WgpuContext<'a> {
     instance: wgpu::Instance,
     adapter: wgpu::Adapter,
     device: wgpu::Device,
@@ -33,7 +36,7 @@ pub(crate) struct WgpuContext<'a> {
 }
 
 impl<'a> WgpuContext<'a> {
-    fn new(target: impl Into<SurfaceTarget<'a>>, size: (u32, u32)) -> Result<Self> {
+    fn new(target: impl Into<SurfaceTarget<'a>>, size: (u32, u32)) -> Result<Self, RenderError> {
         let instance = Self::create_instance();
         let surface = Self::create_surface(&instance, target)?;
         let adapter = Self::create_adapter(&instance, &surface)?;
@@ -59,7 +62,9 @@ impl<'a> WgpuContext<'a> {
             view_formats: vec![],
         };
 
-        let pipeline = Self::create_pipeline(&device, &config);
+        let shader =
+            device.create_shader_module(include_wgsl!("./../../../assets/shaders/default.wgsl"));
+        let pipeline = Self::create_pipeline(&device, &config, &shader);
 
         Ok(Self {
             instance,
@@ -83,14 +88,17 @@ impl<'a> WgpuContext<'a> {
     fn create_surface(
         instance: &wgpu::Instance,
         target: impl Into<SurfaceTarget<'a>>,
-    ) -> Result<wgpu::Surface<'a>> {
+    ) -> Result<wgpu::Surface<'a>, RenderError> {
         let surface = instance
             .create_surface(target.into())
             .map_err(RenderError::CreateSurface)?;
         Ok(surface)
     }
 
-    fn create_adapter(instance: &wgpu::Instance, surface: &wgpu::Surface) -> Result<wgpu::Adapter> {
+    fn create_adapter(
+        instance: &wgpu::Instance,
+        surface: &wgpu::Surface,
+    ) -> Result<wgpu::Adapter, RenderError> {
         let adapter = smol::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: Default::default(),
             compatible_surface: Some(surface),
@@ -100,7 +108,7 @@ impl<'a> WgpuContext<'a> {
         Ok(adapter)
     }
 
-    fn create_device(adapter: &wgpu::Adapter) -> Result<(wgpu::Device, wgpu::Queue)> {
+    fn create_device(adapter: &wgpu::Adapter) -> Result<(wgpu::Device, wgpu::Queue), RenderError> {
         let result = smol::block_on(adapter.request_device(
             &wgpu::DeviceDescriptor {
                 label: None,
@@ -117,37 +125,8 @@ impl<'a> WgpuContext<'a> {
     fn create_pipeline(
         device: &wgpu::Device,
         config: &wgpu::SurfaceConfiguration,
+        shader: &wgpu::ShaderModule,
     ) -> wgpu::RenderPipeline {
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("shader"),
-            source: wgpu::ShaderSource::Wgsl(
-                r#"
-                    struct VertexOutput {
-                        @builtin(position) clip_position: vec4<f32>,
-                        @location(0) vert_pos: vec3<f32>,
-                    }
-
-                    @vertex
-                    fn vs_main(
-                        @builtin(vertex_index) in_vertex_index: u32,
-                    ) -> VertexOutput {
-                        var out: VertexOutput;
-                        let x = f32(1 - i32(in_vertex_index)) * 0.5;
-                        let y = f32(i32(in_vertex_index & 1u) * 2 - 1) * 0.5;
-                        out.clip_position = vec4<f32>(x, y, 0.0, 1.0);
-                        out.vert_pos = out.clip_position.xyz;
-                        return out;
-                    }
-
-                    @fragment
-                    fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-                        return vec4<f32>(0.3, 0.2, 0.1, 1.0);
-                    }
-                "#
-                .into(),
-            ),
-        });
-
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Pipeline Layout"),
             bind_group_layouts: &[],
@@ -158,13 +137,13 @@ impl<'a> WgpuContext<'a> {
             label: Some("Pipeline"),
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
-                module: &shader,
+                module: shader,
                 entry_point: Some("vs_main"),
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 buffers: &[],
             },
             fragment: Some(wgpu::FragmentState {
-                module: &shader,
+                module: shader,
                 entry_point: Some("fs_main"),
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 targets: &[Some(wgpu::ColorTargetState {
@@ -193,14 +172,14 @@ impl<'a> WgpuContext<'a> {
         })
     }
 
-    pub(crate) fn set_surface_size(&mut self, width: u32, height: u32) {
+    pub fn set_surface_size(&mut self, width: u32, height: u32) {
         self.config.width = width;
         self.config.height = height;
         self.surface.configure(&self.device, &self.config);
         self.surface_configured = true;
     }
 
-    pub(crate) fn render(&mut self) -> Result {
+    pub(crate) fn render(&mut self) -> Result<(), RenderError> {
         if !self.surface_configured {
             return Ok(());
         }

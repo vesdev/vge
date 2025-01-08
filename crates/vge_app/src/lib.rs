@@ -1,31 +1,25 @@
-use crate::prelude::{Gfx, Options};
-use crate::{Result, window};
+use thiserror::Error;
+use vge_core::{CreateFn, DrawFn, StepFn};
+use vge_window::WindowError;
 
-pub mod event;
-
-pub type CreateFn<S> = fn(&mut Ctx) -> S;
-pub type StepFn<S> = fn(&mut Ctx, S);
-pub type DrawFn<S> = fn(&mut Ctx, S);
-
-pub struct Ctx<'a> {
-    gfx: &'a Gfx<'a>,
-}
-
-impl<'a> Ctx<'a> {
-    pub(crate) fn new(gfx: &'a Gfx<'a>) -> Self {
-        Self { gfx }
+pub mod options {
+    #[derive(Default)]
+    pub enum Window {
+        #[default]
+        Winit,
     }
 
-    pub fn create_text(&self, text: &str) -> Text {
-        Text { text: text.into() }
+    #[derive(Default)]
+    pub enum Renderer {
+        #[default]
+        Wgpu,
     }
 
-    pub fn draw<T>(&mut self, mesh: T) {}
-}
-
-// TODO: remove this is temporary
-pub struct Text {
-    text: String,
+    #[derive(Default)]
+    pub struct Options {
+        pub window: Window,
+        pub renderer: Renderer,
+    }
 }
 
 // #[derive(Default)]
@@ -62,8 +56,15 @@ impl<T> App<T> {
         self
     }
 
-    pub fn run(&mut self) -> Result {
-        let mut window = window::winit((640, 480), self.draw_fn.take().unwrap())?;
-        window.run()
+    pub fn run(&mut self) -> Result<(), AppError> {
+        let mut window = vge_window::winit((640, 480), self.draw_fn.take().unwrap())?;
+        window.run()?;
+        Ok(())
     }
+}
+
+#[derive(Error, Debug)]
+pub enum AppError {
+    #[error(transparent)]
+    Window(#[from] WindowError),
 }

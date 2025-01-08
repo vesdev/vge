@@ -1,0 +1,11 @@
+[package]
+name = "vge_window"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+vge_core = { path = "../vge_core" }
+vge_render = { path = "../vge_render" }
+thiserror = "2.0.7"
+tracing = "0.1.41"
+winit = "0.30.5"

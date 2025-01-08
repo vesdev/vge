@@ -51,6 +51,7 @@
 
           devPackages = [
             fenix.packages.${system}.latest.toolchain
+            pkgs.wgsl-analyzer
           ];
         in
         {
