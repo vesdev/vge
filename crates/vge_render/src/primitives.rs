@@ -1,5 +1,5 @@
 use bytemuck::{Pod, Zeroable};
-use vge_math::{Rect, Vec3};
+use vge_math::{Rect, Vec2, Vec3};
 use wgpu::VertexAttribute;
 
 #[repr(C)]
@@ -34,10 +34,7 @@ impl VertexColored {
 
 impl From<(Vec3, Color)> for VertexColored {
     fn from(value: (Vec3, Color)) -> Self {
-        Self {
-            position: value.0,
-            color: value.1,
-        }
+        Self::new(value.0, value.1)
     }
 }
 
@@ -48,6 +45,40 @@ impl Vertex for VertexColored {
 
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<VertexColored>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: ATTRIBUTES,
+        }
+    }
+}
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Zeroable, Pod)]
+pub struct VertexTextured {
+    pub position: Vec3,
+    pub tex_coords: Vec2,
+}
+
+impl VertexTextured {
+    pub fn new(mut pos: Vec3, tex_coords: Vec2) -> Self {
+        Self {
+            position: pos,
+            tex_coords,
+        }
+    }
+}
+
+impl From<(Vec3, Vec2)> for VertexTextured {
+    fn from(value: (Vec3, Vec2)) -> Self {
+        Self::new(value.0, value.1)
+    }
+}
+
+impl Vertex for VertexTextured {
+    fn desc() -> wgpu::VertexBufferLayout<'static> {
+        const ATTRIBUTES: &[VertexAttribute] =
+            &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x2];
+
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<VertexTextured>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: ATTRIBUTES,
         }
@@ -77,6 +108,7 @@ impl<V: Vertex> Primitive<3, 0> for Triangle<V> {
         [self.0, self.1, self.2]
     }
 
+    // NOTE: for dynamically created primitives we might want to remove static
     fn indices(&self) -> Option<&'static IndexBuffer<0>> {
         None
     }
@@ -94,14 +126,21 @@ impl From<[(Vec3, Color); 3]> for Triangle<VertexColored> {
     }
 }
 
+impl From<[(Vec3, Vec2); 3]> for Triangle<VertexTextured> {
+    fn from(value: [(Vec3, Vec2); 3]) -> Self {
+        Self(value[0].into(), value[1].into(), value[2].into())
+    }
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct Quad<V: Vertex> {
     vertices: VertexBuffer<4, V>,
 }
 
+// TODO: temporary
 impl Quad<VertexColored> {
-    pub fn new(rect: Rect) -> Self {
+    pub fn colored(rect: Rect) -> Self {
         let vertices: [VertexColored; 4] = [
             (
                 Vec3::new(rect.min.x, rect.min.y, 0.0),
@@ -121,6 +160,35 @@ impl Quad<VertexColored> {
             (
                 Vec3::new(rect.max.x, rect.max.y, 0.0),
                 Color::new(0.0, 1.0, 0.0),
+            )
+                .into(),
+        ];
+
+        Self { vertices }
+    }
+}
+impl Quad<VertexTextured> {
+    pub fn textured(rect: Rect) -> Self {
+        #[rustfmt::skip]
+        let vertices: [VertexTextured; 4] = [
+            (
+                Vec3::new(rect.min.x, rect.min.y, 0.0),
+                Vec2::new(0.0, 1.0),
+            )
+                .into(),
+            (
+                Vec3::new(rect.max.x, rect.min.y, 0.0),
+                Vec2::new(1.0, 1.0),
+            )
+                .into(),
+            (
+                Vec3::new(rect.min.x, rect.max.y, 0.0),
+                Vec2::new(0.0, 0.0),
+            )
+                .into(),
+            (
+                Vec3::new(rect.max.x, rect.max.y, 0.0),
+                Vec2::new(1.0, 0.0),
             )
                 .into(),
         ];
