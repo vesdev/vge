@@ -3,7 +3,7 @@
 </p>
 
 <h2 align="center">simple game engine for the rust language.</h12>
-<h4 align="center">inspired by GameMaker and Bevy</h4>
+<h4 align="center">inspired by GameMaker, Bevy and Geng</h4>
 
 > [!NOTE]
 > Still WIP
