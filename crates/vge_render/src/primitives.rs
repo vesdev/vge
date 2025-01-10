@@ -1,20 +1,6 @@
 use bytemuck::{Pod, Zeroable};
-use vge_math::Rect;
+use vge_math::{Rect, Vec3};
 use wgpu::VertexAttribute;
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Zeroable, Pod)]
-pub struct Position {
-    pub x: f32,
-    pub y: f32,
-    pub z: f32,
-}
-
-impl Position {
-    pub fn new(x: f32, y: f32, z: f32) -> Self {
-        Self { x, y, z }
-    }
-}
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Zeroable, Pod)]
@@ -32,13 +18,13 @@ impl Color {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Zeroable, Pod)]
-pub struct Vertex {
-    pub position: Position,
+pub struct VertexColored {
+    pub position: Vec3,
     pub color: Color,
 }
 
-impl Vertex {
-    pub fn new(pos: Position, col: Color) -> Self {
+impl VertexColored {
+    pub fn new(pos: Vec3, col: Color) -> Self {
         Self {
             position: pos,
             color: col,
@@ -46,8 +32,8 @@ impl Vertex {
     }
 }
 
-impl From<(Position, Color)> for Vertex {
-    fn from(value: (Position, Color)) -> Self {
+impl From<(Vec3, Color)> for VertexColored {
+    fn from(value: (Vec3, Color)) -> Self {
         Self {
             position: value.0,
             color: value.1,
@@ -55,33 +41,39 @@ impl From<(Position, Color)> for Vertex {
     }
 }
 
-impl Vertex {
-    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
+impl Vertex for VertexColored {
+    fn desc() -> wgpu::VertexBufferLayout<'static> {
         const ATTRIBUTES: &[VertexAttribute] =
             &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
 
         wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
+            array_stride: std::mem::size_of::<VertexColored>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: ATTRIBUTES,
         }
     }
 }
 
+pub trait Vertex: Clone + Copy + Zeroable + Pod {
+    fn desc() -> wgpu::VertexBufferLayout<'static>;
+}
+
 pub trait Primitive<const VS: usize, const IS: usize> {
-    fn vertices(&self) -> VertexBuffer<VS>;
+    type T;
+    fn vertices(&self) -> VertexBuffer<VS, Self::T>;
     fn indices(&self) -> Option<&'static IndexBuffer<IS>>;
 }
 
-pub type VertexBuffer<const N: usize> = [Vertex; N];
+pub type VertexBuffer<const N: usize, V> = [V; N];
 pub type IndexBuffer<const N: usize> = [u16; N];
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Zeroable, Pod)]
-pub struct Triangle(pub Vertex, pub Vertex, pub Vertex);
+#[derive(Clone, Copy, Debug)]
+pub struct Triangle<V: Vertex>(pub V, pub V, pub V);
 
-impl Primitive<3, 0> for Triangle {
-    fn vertices(&self) -> VertexBuffer<3> {
+impl<V: Vertex> Primitive<3, 0> for Triangle<V> {
+    type T = V;
+    fn vertices(&self) -> VertexBuffer<3, Self::T> {
         [self.0, self.1, self.2]
     }
 
@@ -90,44 +82,44 @@ impl Primitive<3, 0> for Triangle {
     }
 }
 
-impl From<[Vertex; 3]> for Triangle {
-    fn from(value: [Vertex; 3]) -> Self {
+impl<V: Vertex> From<[V; 3]> for Triangle<V> {
+    fn from(value: [V; 3]) -> Self {
         Self(value[0], value[1], value[2])
     }
 }
 
-impl From<[(Position, Color); 3]> for Triangle {
-    fn from(value: [(Position, Color); 3]) -> Self {
+impl From<[(Vec3, Color); 3]> for Triangle<VertexColored> {
+    fn from(value: [(Vec3, Color); 3]) -> Self {
         Self(value[0].into(), value[1].into(), value[2].into())
     }
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Zeroable, Pod)]
-pub struct Quad {
-    vertices: VertexBuffer<4>,
+#[derive(Clone, Copy, Debug)]
+pub struct Quad<V: Vertex> {
+    vertices: VertexBuffer<4, V>,
 }
 
-impl Quad {
+impl Quad<VertexColored> {
     pub fn new(rect: Rect) -> Self {
-        let vertices = [
+        let vertices: [VertexColored; 4] = [
             (
-                Position::new(rect.min.x, rect.min.y, 0.0),
+                Vec3::new(rect.min.x, rect.min.y, 0.0),
                 Color::new(0.0, 0.0, 1.0),
             )
                 .into(),
             (
-                Position::new(rect.max.x, rect.min.y, 0.0),
+                Vec3::new(rect.max.x, rect.min.y, 0.0),
                 Color::new(1.0, 0.0, 0.0),
             )
                 .into(),
             (
-                Position::new(rect.min.x, rect.max.y, 0.0),
+                Vec3::new(rect.min.x, rect.max.y, 0.0),
                 Color::new(0.0, 1.0, 0.0),
             )
                 .into(),
             (
-                Position::new(rect.max.x, rect.max.y, 0.0),
+                Vec3::new(rect.max.x, rect.max.y, 0.0),
                 Color::new(0.0, 1.0, 0.0),
             )
                 .into(),
@@ -137,8 +129,9 @@ impl Quad {
     }
 }
 
-impl Primitive<4, 6> for Quad {
-    fn vertices(&self) -> VertexBuffer<4> {
+impl<V: Vertex> Primitive<4, 6> for Quad<V> {
+    type T = V;
+    fn vertices(&self) -> VertexBuffer<4, Self::T> {
         self.vertices
     }
 
