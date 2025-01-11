@@ -1,6 +1,8 @@
 use thiserror::Error;
-use vge_core::{CreateFn, DrawFn, StepFn};
-use vge_window::WindowError;
+
+use std::{path::PathBuf, str::FromStr, sync::mpsc};
+
+use vge_render::{Gfx, mesh};
 
 pub mod options {
     #[derive(Default)]
@@ -22,49 +24,18 @@ pub mod options {
     }
 }
 
-// #[derive(Default)]
-pub struct App<S> {
-    create_fn: Option<CreateFn<S>>,
-    step_fn: Option<StepFn<S>>,
-    draw_fn: Option<DrawFn<S>>,
+#[derive(Clone)]
+pub struct Ctx {
+    sender: mpsc::Sender<i32>,
 }
 
-impl<T> Default for App<T> {
-    fn default() -> Self {
-        // todo!()
-        Self {
-            create_fn: None,
-            step_fn: None,
-            draw_fn: None,
-        }
+impl Ctx {
+    pub fn new(sender: mpsc::Sender<i32>) -> Self {
+        Self { sender }
     }
 }
 
-impl<T> App<T> {
-    pub fn create(mut self, cb: CreateFn<T>) -> Self {
-        self.create_fn = Some(cb);
-        self
-    }
-
-    pub fn draw(mut self, cb: DrawFn<T>) -> Self {
-        self.draw_fn = Some(cb);
-        self
-    }
-
-    pub fn step(mut self, cb: StepFn<T>) -> Self {
-        self.step_fn = Some(cb);
-        self
-    }
-
-    pub fn run(&mut self) -> Result<(), AppError> {
-        let mut window = vge_window::winit((640, 480), self.draw_fn.take().unwrap())?;
-        window.run()?;
-        Ok(())
-    }
-}
-
-#[derive(Error, Debug)]
-pub enum AppError {
-    #[error(transparent)]
-    Window(#[from] WindowError),
+pub trait App: Send + Sync + 'static {
+    fn init(&mut self, ctx: &mut Ctx, gfx: &mut Gfx);
+    fn step(&mut self, ctx: &mut Ctx);
 }

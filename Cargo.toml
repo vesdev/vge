@@ -8,10 +8,11 @@ edition = "2024"
 
 [dependencies]
 vge_window = { path = "crates/vge_window" }
-vge_core = { path = "crates/vge_core" }
 vge_app = { path = "crates/vge_app" }
 vge_render = { path = "crates/vge_render" }
 vge_math = { path = "crates/vge_math" }
+
+thiserror = "2.0.9"
 
 [dev-dependencies]
 smol = "2.0.2"

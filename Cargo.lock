@@ -1909,9 +1909,9 @@ name = "vge"
 version = "0.1.0"
 dependencies = [
  "smol",
+ "thiserror 2.0.9",
  "tracing-subscriber",
  "vge_app",
- "vge_core",
  "vge_math",
  "vge_render",
  "vge_window",
@@ -1922,15 +1922,6 @@ name = "vge_app"
 version = "0.1.0"
 dependencies = [
  "thiserror 2.0.9",
- "vge_core",
- "vge_render",
- "vge_window",
-]
-
-[[package]]
-name = "vge_core"
-version = "0.1.0"
-dependencies = [
  "vge_render",
 ]
 
@@ -1959,7 +1950,7 @@ version = "0.1.0"
 dependencies = [
  "thiserror 2.0.9",
  "tracing",
- "vge_core",
+ "vge_app",
  "vge_render",
  "winit",
 ]

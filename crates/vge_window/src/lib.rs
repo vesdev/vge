@@ -1,8 +1,8 @@
-use std::sync::Arc;
+use std::sync::{Arc, mpsc};
 
 use thiserror::Error;
 use tracing::info;
-use vge_core::{Ctx, DrawFn};
+use vge_app::{App, Ctx};
 use vge_render::Gfx;
 use winit::{
     application::ApplicationHandler, error::EventLoopError, event::WindowEvent,
@@ -13,19 +13,16 @@ pub trait Window {
     fn size(&self) -> (u32, u32);
 }
 
-pub fn winit<'a, S>(
-    size: (u32, u32),
-    draw: DrawFn<S>,
-) -> Result<WindowBackend<'a, S>, WindowError> {
-    let winit = WinitWindow::new(size, draw)?;
+pub fn winit<'a, A: App>(size: (u32, u32), app: A) -> Result<WindowBackend<'a, A>, WindowError> {
+    let winit = WinitWindow::new(size, app)?;
     Ok(WindowBackend::Winit(winit))
 }
 
-pub enum WindowBackend<'a, S> {
-    Winit(WinitWindow<'a, S>),
+pub enum WindowBackend<'a, A: App> {
+    Winit(WinitWindow<'a, A>),
 }
 
-impl<S> WindowBackend<'_, S> {
+impl<A: App> WindowBackend<'_, A> {
     pub fn run(&mut self) -> Result<(), WindowError> {
         match self {
             WindowBackend::Winit(winit) => winit.run(),
@@ -33,38 +30,47 @@ impl<S> WindowBackend<'_, S> {
     }
 }
 
-pub struct WinitWindow<'a, S> {
+pub struct WinitWindow<'a, A: App> {
     pub size: (u32, u32),
-    pub draw: DrawFn<S>,
     pub gfx: Option<Gfx<'a>>,
     pub window: Option<Arc<winit::window::Window>>,
+    pub draw_receiver: mpsc::Receiver<i32>,
+    pub draw_sender: mpsc::Sender<i32>,
+    pub app: Option<A>,
 }
 
-impl<S> Window for WinitWindow<'_, S> {
+impl<A: App> Window for WinitWindow<'_, A> {
     fn size(&self) -> (u32, u32) {
         self.size
     }
 }
 
-impl<S> WinitWindow<'_, S> {
-    fn new(size: (u32, u32), draw: DrawFn<S>) -> Result<Self, WindowError> {
+impl<A: App> WinitWindow<'_, A> {
+    fn new(size: (u32, u32), app: A) -> Result<Self, WindowError> {
+        let (draw_sender, draw_receiver) = std::sync::mpsc::channel();
         Ok(Self {
             window: None,
             size,
-            draw,
             gfx: None,
+            draw_receiver,
+            draw_sender,
+            app: Some(app),
         })
     }
 
     pub(crate) fn run(&mut self) -> Result<(), WindowError> {
         let event_loop = winit::event_loop::EventLoop::new()?;
         event_loop.set_control_flow(ControlFlow::Poll);
+
+        // let sender = self.draw_sender.clone();
+        // let ctx = Ctx::new(gfx);
+
         event_loop.run_app(self)?;
         Ok(())
     }
 }
 
-impl<S> ApplicationHandler for WinitWindow<'_, S> {
+impl<A: App> ApplicationHandler for WinitWindow<'_, A> {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         let window_attributes = winit::window::Window::default_attributes()
             .with_title("forsen")
@@ -72,9 +78,17 @@ impl<S> ApplicationHandler for WinitWindow<'_, S> {
 
         let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
         let mut gfx = vge_render::wgpu(window.clone(), self.size).unwrap();
-        if let Gfx::Wgpu(wgpu) = &mut gfx {
-            wgpu.set_surface_size(window.inner_size().width, window.inner_size().height);
-        };
+        gfx.set_surface_size(window.inner_size().width, window.inner_size().height);
+
+        if let Some(mut app) = self.app.take() {
+            let mut ctx = Ctx::new(self.draw_sender.clone());
+            app.init(&mut ctx, &mut gfx);
+
+            std::thread::spawn(move || {
+                app.step(&mut ctx);
+            });
+        }
+
         self.gfx = Some(gfx);
         self.window = Some(window);
     }
@@ -92,23 +106,18 @@ impl<S> ApplicationHandler for WinitWindow<'_, S> {
             }
             WindowEvent::RedrawRequested => {
                 self.window.as_ref().unwrap().request_redraw();
+                let Some(gfx) = &mut self.gfx else {
+                    return;
+                };
 
-                if let Some(gfx) = &mut self.gfx {
-                    let ctx = Ctx::new(gfx);
-                    // (self.draw)(ctx);
-
-                    gfx.render().unwrap();
-                }
+                gfx.render(&[]).unwrap();
             }
             WindowEvent::Resized(size) => {
                 let Some(gfx) = &mut self.gfx else {
                     return;
                 };
-                let Gfx::Wgpu(wgpu) = gfx else {
-                    return;
-                };
 
-                wgpu.set_surface_size(size.width, size.height);
+                gfx.set_surface_size(size.width, size.height);
             }
             _ => (),
         }

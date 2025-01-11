@@ -3,33 +3,18 @@ use vge::prelude::*;
 fn main() {
     tracing_subscriber::fmt::init();
 
-    App::default()
-        .create(create)
-        .step(step)
-        .draw(draw)
-        .run()
-        .unwrap();
+    vge::run(Simple::default()).unwrap();
 }
 
-pub struct State {
-    text: mesh::Text,
-}
+#[derive(Default)]
+pub struct Simple {}
 
-/// Create event
-fn create(ctx: &mut Ctx) -> State {
-    //TODO: create some meshes here
-    let text = ctx.create_text("forsen");
+impl App for Simple {
+    fn init(&mut self, ctx: &mut Ctx, gfx: &mut Gfx) {
+        // todo!()
+    }
 
-    State { text }
-}
-
-/// Step event
-fn step(ctx: &mut Ctx, state: State) {
-    //TODO: some simple game logic
-}
-
-/// Draw event
-fn draw(ctx: &mut Ctx, state: State) {
-    //TODO: draw something simple
-    ctx.draw(state.text);
+    fn step(&mut self, ctx: &mut Ctx) {
+        // todo!()
+    }
 }

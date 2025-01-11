@@ -1,10 +1,14 @@
-use primitives::{Primitive, Quad, Vertex, VertexColored, VertexTextured};
+use std::{path::PathBuf, str::FromStr};
+
+use mesh::{Sprite, TexturedQuad};
+use primitives::{Primitive, Quad, Vertex, VertexTextured};
 use thiserror::Error;
 use vge_math::{Rect, Vec2};
 use wgpu::{
     CreateSurfaceError, ShaderModuleDescriptor, SurfaceTarget, include_wgsl, util::DeviceExt,
 };
 
+pub mod mesh;
 mod primitives;
 
 const COLORED_SHADER: ShaderModuleDescriptor =
@@ -15,45 +19,30 @@ const TEXTURED_SHADER: ShaderModuleDescriptor =
 
 const LOGO: &[u8] = include_bytes!("../../../assets/images/vge_logo_9x.png");
 
-/// Graphical Context
-pub enum Gfx<'a> {
-    Wgpu(WgpuContext<'a>),
-    None,
-}
-
-impl Gfx<'_> {
-    pub fn render(&mut self) -> Result<(), RenderError> {
-        match self {
-            Gfx::Wgpu(wgpu_context) => wgpu_context.render(),
-            Gfx::None => todo!(),
-        }
-    }
-}
-
 pub fn wgpu<'a>(
     target: impl Into<SurfaceTarget<'a>>,
     size: (u32, u32),
 ) -> Result<Gfx<'a>, RenderError> {
-    let ctx = WgpuContext::new(target, size)?;
-    Ok(Gfx::Wgpu(ctx))
+    let gfx = Gfx::new(target, size)?;
+    Ok(gfx)
 }
 
-pub struct WgpuContext<'a> {
+pub struct Gfx<'a> {
     instance: wgpu::Instance,
     adapter: wgpu::Adapter,
-    device: wgpu::Device,
+    pub(crate) device: wgpu::Device,
     queue: wgpu::Queue,
     surface: wgpu::Surface<'a>,
     surface_configured: bool,
     config: wgpu::SurfaceConfiguration,
     pipeline: wgpu::RenderPipeline,
-    vbuf: wgpu::Buffer,
-    ibuf: wgpu::Buffer,
-    num_indices: u32,
+    // vbuf: wgpu::Buffer,
+    // ibuf: wgpu::Buffer,
+    // num_indices: u32,
     diffuse_bind_group: wgpu::BindGroup,
 }
 
-impl<'a> WgpuContext<'a> {
+impl<'a> Gfx<'a> {
     fn new(target: impl Into<SurfaceTarget<'a>>, size: (u32, u32)) -> Result<Self, RenderError> {
         let instance = Self::create_instance();
         let surface = Self::create_surface(&instance, target)?;
@@ -81,7 +70,7 @@ impl<'a> WgpuContext<'a> {
         };
 
         // image
-        let logo = Texture::from_bytes(&device, &queue, LOGO, "logo image")?;
+        let logo = TexturedQuad::from_bytes(&device, &queue, LOGO, "logo image")?;
 
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -127,22 +116,9 @@ impl<'a> WgpuContext<'a> {
             &texture_bind_group_layout,
         ]);
 
-        let quad = Quad::textured(Rect::new(Vec2::new(-0.5, -0.5), Vec2::new(0.5, 0.5)));
         // let quad = Quad::colored(Rect::new(Vec2::new(-0.5, -0.5), Vec2::new(0.5, 0.5)));
 
-        let vbuf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex bufer"),
-            contents: bytemuck::bytes_of(&quad.vertices()),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-
-        let ibuf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(quad.indices().unwrap()),
-            usage: wgpu::BufferUsages::INDEX,
-        });
-
-        let num_indices = quad.indices().unwrap().len() as u32;
+        // let num_indices = quad.indices().unwrap().len() as u32;
 
         Ok(Self {
             instance,
@@ -153,9 +129,9 @@ impl<'a> WgpuContext<'a> {
             config,
             surface_configured: false,
             pipeline,
-            vbuf,
-            ibuf,
-            num_indices,
+            // vbuf,
+            // ibuf,
+            // num_indices,
             diffuse_bind_group,
         })
     }
@@ -262,7 +238,8 @@ impl<'a> WgpuContext<'a> {
         self.surface_configured = true;
     }
 
-    pub(crate) fn render(&mut self) -> Result<(), RenderError> {
+    // TODO: render list of meshes
+    pub fn render(&mut self, sprites: &[Sprite]) -> Result<(), RenderError> {
         if !self.surface_configured {
             return Ok(());
         }
@@ -305,9 +282,17 @@ impl<'a> WgpuContext<'a> {
 
             render_pass.set_pipeline(&self.pipeline);
             render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
-            render_pass.set_index_buffer(self.ibuf.slice(..), wgpu::IndexFormat::Uint16);
-            render_pass.set_vertex_buffer(0, self.vbuf.slice(..));
-            render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
+
+            for spr in sprites {
+                render_pass
+                    .set_index_buffer(spr.texture.idx_buf.slice(..), wgpu::IndexFormat::Uint16);
+                render_pass.set_vertex_buffer(0, spr.texture.vtx_buf.slice(..));
+                render_pass.draw_indexed(
+                    0..spr.texture.quad.indices().unwrap().len() as u32,
+                    0,
+                    0..1,
+                );
+            }
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -315,88 +300,9 @@ impl<'a> WgpuContext<'a> {
 
         Ok(())
     }
-}
 
-/// Generic wgpu texture
-pub struct Texture {
-    pub texture: wgpu::Texture,
-    pub view: wgpu::TextureView,
-    pub sampler: wgpu::Sampler,
-}
-
-impl Texture {
-    pub fn from_bytes(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        bytes: &[u8],
-        label: &str,
-    ) -> Result<Self, RenderError> {
-        let img = image::load_from_memory(bytes)?;
-        Self::from_image(device, queue, &img, Some(label))
-    }
-
-    pub fn from_image(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        img: &image::DynamicImage,
-        label: Option<&str>,
-    ) -> Result<Self, RenderError> {
-        let image = img;
-        let rgba = image.to_rgba8();
-
-        let dimensions = rgba.dimensions();
-
-        let texture_size = wgpu::Extent3d {
-            width: dimensions.0,
-            height: dimensions.1,
-            depth_or_array_layers: 1,
-        };
-
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label,
-            size: texture_size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-
-        queue.write_texture(
-            wgpu::ImageCopyTextureBase {
-                texture: &texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            &rgba,
-            wgpu::ImageDataLayout {
-                offset: 0,
-                bytes_per_row: Some(4 * dimensions.0),
-                rows_per_image: Some(dimensions.1),
-            },
-            texture_size,
-        );
-
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("Sampler"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            ..Default::default()
-        });
-
-        Ok(Self {
-            texture,
-            view,
-            sampler,
-        })
+    pub fn create_sprite(&self, path: &str) -> mesh::Sprite {
+        mesh::Sprite::new(self, PathBuf::from_str(path).unwrap())
     }
 }
 
